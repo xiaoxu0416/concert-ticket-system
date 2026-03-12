@@ -1,0 +1,103 @@
+# 服务器配置（新增优雅停机、端口适配）
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+  shutdown: graceful  # 核心优化：开启Web容器优雅停机（高并发下避免请求中断）
+  tomcat:
+    threads:
+      max: 200  # 新增：Tomcat最大线程数（提升并发处理能力）
+      min-spare: 20 # 新增：Tomcat最小空闲线程数（避免频繁创建线程）
+
+# Spring核心配置
+spring:
+  # 优雅停机全局配置（和启动类的30秒等待匹配）
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  # 环境标识（启动类会打印，区分开发/测试环境）
+  profiles:
+    active: dev
+  # 数据库配置（优化连接池，提升并发性能）
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/concert_ticket?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    # 新增：HikariCP连接池配置（高并发必备，默认也是Hikari但需显式优化）
+    hikari:
+      maximum-pool-size: 20 # 最大连接数（适配高并发数据库操作）
+      minimum-idle: 5       # 最小空闲连接
+      idle-timeout: 300000  # 连接空闲超时（5分钟）
+      connection-timeout: 30000 # 连接获取超时（30秒）
+  # Redis配置（强化高并发配置）
+  redis:
+    host: localhost
+    port: 6379
+    database: 0
+    timeout: 3000ms
+    password:
+    lettuce:
+      pool:
+        max-active: 32       # 优化：提升最大连接数（适配高并发库存扣减）
+        max-idle: 16         # 优化：提升最大空闲连接
+        min-idle: 4          # 优化：提升最小空闲连接
+        max-wait: 2000ms     # 优化：延长连接等待时间
+      shutdown-timeout: 100ms # 新增：Redis客户端优雅停机超时
+  # RabbitMQ配置（修复冲突：删除connection.cache.size，保留channel.cache.size）
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
+    # 新增：生产者确认（保证消息发送到MQ）
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    # 修复：仅保留channel缓存配置（CHANNEL模式下合法），删除connection缓存配置
+    cache:
+      channel:
+        size: 10
+    listener:
+      simple:
+        acknowledge-mode: manual # 保留：手动确认消息（核心）
+        concurrency: 2           # 优化：提升核心线程数
+        max-concurrency: 5       # 优化：提升最大线程数
+        prefetch: 1              # 新增：每次只取1条消息（避免消费堆积）
+        shutdown-timeout: 30000  # 新增：MQ消费者优雅停机超时（30秒）
+  # 时间格式化（优化：统一全局时间格式）
+  mvc:
+    format:
+      date: yyyy-MM-dd
+      datetime: yyyy-MM-dd HH:mm:ss
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+# MyBatis-Plus配置（优化日志+性能）
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true # 保留：下划线转驼峰
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl # 优化：改用SLF4J日志（和启动类@Slf4j统一）
+    default-executor-type: reuse # 新增：复用执行器（提升SQL执行性能）
+    cache-enabled: false # 新增：关闭二级缓存（高并发下缓存易不一致）
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.concert.entity
+  global-config:
+    db-config:
+      id-type: auto # 新增：全局默认自增ID（适配你的实体类配置）
+
+# 自定义配置（补充完整）
+concert:
+  limit:
+    rate: 10 # 令牌桶限流速率：10个/秒
+  rabbitmq:
+    queue:
+      order: concert_order_queue
+    exchange:
+      order: concert_order_exchange
+    routing-key:
+      order: concert_order_routing
+  # 新增：库存预热配置（毕设初始化Redis库存用）
+  stock:
+    preheat: true # 是否启动时预热库存到Redis
+    expire: 86400 # Redis库存过期时间（秒），24小时

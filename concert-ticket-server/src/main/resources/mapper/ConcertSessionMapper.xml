@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 注意namespace要和Mapper接口全路径一致 -->
+<mapper namespace="com.concert.mapper.ConcertSessionMapper">
+
+    <!-- 乐观锁扣减库存：只有库存>=扣减数量时才执行 -->
+    <update id="deductStock">
+        UPDATE concert_session
+        SET surplus_stock = surplus_stock - #{num}, update_time = NOW()
+        WHERE id = #{sessionId} AND surplus_stock >= #{num};
+    </update>
+
+    <!-- 库存回滚：归还库存 -->
+    <update id="rollbackStock">
+        UPDATE concert_session
+        SET surplus_stock = surplus_stock + #{num}, update_time = NOW()
+        WHERE id = #{sessionId};
+    </update>
+
+</mapper>
